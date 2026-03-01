@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Hex Wars Victory</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#f4c025",
+                        "accent": "#3b82f6", 
+                        "background-light": "#f8f8f5",
+                        "background-dark": "#1a1a1a",
+                        "surface": "#262626",
+                        "surface-highlight": "#333333",
+                    },
+                    fontFamily: {
+                        "display": ["Spline Sans", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        @layer utilities {
+            .hex-mask {
+                clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            }
+            .hex-border-gradient {
+                background: linear-gradient(to bottom right, #f4c025, #333);
+            }
+        }
+    </style>
+<style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen overflow-hidden selection:bg-primary selection:text-background-dark">
+<div class="relative w-full h-screen flex flex-col">
+<div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+<div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#666 1px, transparent 1px); background-size: 20px 20px;">
+</div>
+<div class="absolute top-[15%] left-[5%] w-32 h-32 border border-white/5 rotate-45"></div>
+<div class="absolute bottom-[20%] right-[10%] w-48 h-48 border border-primary/10 hex-mask"></div>
+<div class="w-full h-full bg-cover bg-center filter blur-xl opacity-30 grayscale" data-alt="Abstract hexagonal dark game board texture" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBArfN-Ofd7gK84fUXgxs3qXyqFonjAeBSBK-aRZceb-mJJKtNHmMnWejgYN7l6_hp10QnsUI1Hy4gCIirAF9Qe42Z_pWieAb14LdHnBxijJFA4KFdXu8VUAfeR4bq2x77V6ZHGj9FAyuba_WG83D3YRFhLuMNUivTWc3Hm_uJbneCWrWFTagP7wTaQF-bvCqUHd5EoAvCa30_6JvduQPHKZSczfTozjy_W64uYNUnGQQZTBIr7mekTFKNz1Q2L5COcnKCvG_htqz18');">
+</div>
+</div>
+<div class="absolute inset-0 bg-background-dark/90 z-10"></div>
+<div class="relative z-20 flex flex-col h-full w-full max-w-md mx-auto">
+<div class="flex items-center p-6 justify-between w-full">
+<button class="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-white/5 transition-colors text-slate-400">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div class="h-1 w-16 bg-white/10 rounded-full"></div>
+<button class="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-white/5 transition-colors text-slate-400">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+<div class="flex-1 flex flex-col items-center justify-center px-8 pb-4 gap-8">
+<div class="relative flex flex-col items-center">
+<div class="absolute inset-0 border border-primary/20 scale-150 rotate-45 opacity-50"></div>
+<div class="relative flex items-center justify-center size-20 text-primary">
+<span class="material-symbols-outlined text-[64px] font-light">emoji_events</span>
+</div>
+</div>
+<div class="text-center space-y-4">
+<h1 class="text-5xl font-medium tracking-tight text-white uppercase">
+                        Victory
+                    </h1>
+<div class="flex flex-col items-center gap-2">
+<p class="text-slate-400 text-sm tracking-widest uppercase font-semibold">Winner</p>
+<div class="flex items-center gap-3 bg-surface border border-white/5 px-4 py-2 rounded-full">
+<div class="w-4 h-4 rounded-full bg-slate-900 border border-slate-700 shadow-sm"></div> 
+<span class="text-white font-medium">Black Player</span>
+</div>
+</div>
+</div>
+<div class="w-full grid grid-cols-2 gap-4 mt-4">
+<div class="group relative flex flex-col items-center justify-center p-5 bg-surface hover:bg-surface-highlight transition-colors border border-white/5">
+<div class="absolute top-0 left-0 w-2 h-2 border-l border-t border-primary/30"></div>
+<div class="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-primary/30"></div>
+<div class="flex items-center gap-2 text-primary/80 mb-2">
+<span class="material-symbols-outlined text-[20px]">grid_view</span>
+</div>
+<p class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Moves</p>
+<p class="text-2xl font-light text-white tabular-nums">28</p>
+</div>
+<div class="group relative flex flex-col items-center justify-center p-5 bg-surface hover:bg-surface-highlight transition-colors border border-white/5">
+<div class="absolute top-0 left-0 w-2 h-2 border-l border-t border-primary/30"></div>
+<div class="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-primary/30"></div>
+<div class="flex items-center gap-2 text-primary/80 mb-2">
+<span class="material-symbols-outlined text-[20px]">schedule</span>
+</div>
+<p class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Time</p>
+<p class="text-2xl font-light text-white tabular-nums">04:35</p>
+</div>
+</div>
+</div>
+<div class="p-8 space-y-4 w-full mt-auto">
+<button class="w-full flex items-center justify-center h-14 bg-primary text-background-dark font-semibold text-lg hover:brightness-110 transition-all rounded-none skew-x-[-10deg] active:scale-[0.98]">
+<span class="skew-x-[10deg] flex items-center">
+<span class="material-symbols-outlined mr-2">replay</span>
+                        New Game
+                    </span>
+</button>
+<button class="w-full flex items-center justify-center h-14 border border-white/10 text-slate-300 font-medium text-base hover:bg-white/5 transition-colors rounded-none skew-x-[-10deg] active:scale-[0.98]">
+<span class="skew-x-[10deg] flex items-center">
+<span class="material-symbols-outlined mr-2">home</span>
+                        Back to Home
+                    </span>
+</button>
+</div>
+</div>
+</div>
+
+</body></html>
