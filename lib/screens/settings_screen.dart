@@ -17,14 +17,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late int _totalMinutes;
   late int _boardRadius;
   late GameMode _gameMode;
+  late AiDifficulty _aiDifficulty;
 
   @override
   void initState() {
     super.initState();
-    _piecesPerPlayer = widget.currentSettings.piecesPerPlayer;
+    _piecesPerPlayer = widget.currentSettings.piecesPerPlayer.clamp(3, 5);
     _totalMinutes = widget.currentSettings.totalTimePerPlayer.inMinutes;
     _boardRadius = widget.currentSettings.boardRadius;
     _gameMode = widget.currentSettings.gameMode;
+    _aiDifficulty = widget.currentSettings.aiDifficulty;
   }
 
   @override
@@ -134,7 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   _StepButton(
                     icon: Icons.add,
-                    onTap: _piecesPerPlayer < 8
+                    onTap: _piecesPerPlayer < 5
                         ? () => setState(() => _piecesPerPlayer++)
                         : null,
                   ),
@@ -177,6 +179,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
+            if (_gameMode == GameMode.pvai) ...[
+              const SizedBox(height: 16),
+              // AI Difficulty
+              _SettingCard(
+                icon: Icons.psychology,
+                title: 'AI Difficulty',
+                subtitle: 'Select the AI strength',
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    _ModeChip(
+                      label: 'Low',
+                      icon: Icons.signal_cellular_alt_1_bar,
+                      isSelected: _aiDifficulty == AiDifficulty.low,
+                      onTap: () => setState(() => _aiDifficulty = AiDifficulty.low),
+                    ),
+                    _ModeChip(
+                      label: 'Medium',
+                      icon: Icons.signal_cellular_alt_2_bar,
+                      isSelected: _aiDifficulty == AiDifficulty.medium,
+                      onTap: () => setState(() => _aiDifficulty = AiDifficulty.medium),
+                    ),
+                    _ModeChip(
+                      label: 'High',
+                      icon: Icons.signal_cellular_alt,
+                      isSelected: _aiDifficulty == AiDifficulty.high,
+                      onTap: () => setState(() => _aiDifficulty = AiDifficulty.high),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 32),
             // Apply button
             SizedBox(
@@ -189,6 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     totalTimePerPlayer: Duration(minutes: _totalMinutes),
                     boardRadius: _boardRadius,
                     gameMode: _gameMode,
+                    aiDifficulty: _aiDifficulty,
                   );
                   Navigator.pop(context, newSettings);
                 },

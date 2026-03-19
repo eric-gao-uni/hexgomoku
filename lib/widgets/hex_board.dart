@@ -6,29 +6,123 @@ import '../models/game_state.dart';
 
 /// Renders the hexagonal board with hexagonal pieces.
 /// Wrapped in InteractiveViewer for zoom & pan.
-class HexBoard extends StatelessWidget {
+class HexBoard extends StatefulWidget {
   final GameState gameState;
 
   const HexBoard({super.key, required this.gameState});
 
   @override
+  State<HexBoard> createState() => _HexBoardState();
+}
+
+class _HexBoardState extends State<HexBoard> with SingleTickerProviderStateMixin {
+  final TransformationController _transformController = TransformationController();
+  late AnimationController _animationController;
+  Animation<Matrix4>? _panAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _animationController.addListener(() {
+      if (_panAnimation != null) {
+        _transformController.value = _panAnimation!.value;
+      }
+    });
+
+    widget.gameState.onBoardRecentered = _handleBoardRecentered;
+  }
+
+  @override
+  void didUpdateWidget(HexBoard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gameState != widget.gameState) {
+      oldWidget.gameState.onBoardRecentered = null;
+      widget.gameState.onBoardRecentered = _handleBoardRecentered;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.gameState.onBoardRecentered == _handleBoardRecentered) {
+      widget.gameState.onBoardRecentered = null;
+    }
+    _transformController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _handleBoardRecentered(Offset unitDelta) {
+    // We defer the calculation to the build phase where we know hexSize?
+    // Wait, we don't know the exact hexSize here because it's computed in LayoutBuilder.
+    // Instead, we can flag that a recenter is pending and do it in build, or store the last metrics.
+  }
+
+  _HexMetrics? _lastMetrics;
+
+  void _onBoardRecenteredWithMetrics(Offset unitDelta) {
+    if (_lastMetrics == null) return;
+    
+    final pixelDx = unitDelta.dx * _lastMetrics!.hexSize;
+    final pixelDy = unitDelta.dy * _lastMetrics!.hexSize;
+
+    // The logical coordinates shifted by -cq, -cr.
+    // To keep the piece visually at the same screen spot, we MUST shift the viewport by the equivalent pixel amount. 
+    // Moving the viewport means shifting the translation matrix.
+    // Note: If pieces moved left, we need to move the camera left (subtract from translation).
+
+    final currentMatrix = _transformController.value;
+    
+    // Create instant shift matrix
+    final shiftedMatrix = currentMatrix.clone()..translate(-pixelDx, -pixelDy);
+    
+    // Instantly apply shift to keep pieces in place visually
+    _transformController.value = shiftedMatrix;
+
+    // Calculate center matrix (where we want to end up).
+    // The InteractiveViewer naturally centers content at identity matrix if constrained correctly, 
+    // or we can simply animate the translation back to (0,0) while preserving scale.
+    final targetMatrix = shiftedMatrix.clone();
+    targetMatrix.setTranslationRaw(0.0, 0.0, 0.0);
+
+    _panAnimation = Matrix4Tween(
+      begin: shiftedMatrix,
+      end: targetMatrix,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOutCubic,
+    ));
+
+    _animationController.forward(from: 0.0);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Need to hook up the actual callback since we need the current metrics
+    widget.gameState.onBoardRecentered = _onBoardRecenteredWithMetrics;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final metrics = _HexMetrics.calculate(
           constraints.maxWidth,
           constraints.maxHeight,
-          gameState.settings.boardRadius,
+          widget.gameState.settings.boardRadius,
         );
+        _lastMetrics = metrics;
+
         return InteractiveViewer(
+          transformationController: _transformController,
           minScale: 0.5,
           maxScale: 3.0,
-          boundaryMargin: const EdgeInsets.all(80),
+          boundaryMargin: EdgeInsets.all(constraints.maxWidth), // give plenty of margin for infinite feel
           child: GestureDetector(
             onTapDown: (details) {
               final coord = _hitTest(details.localPosition, metrics);
-              if (coord != null && gameState.isValidCoord(coord)) {
-                gameState.onCellTap(coord);
+              if (coord != null && widget.gameState.isValidCoord(coord)) {
+                widget.gameState.onCellTap(coord);
               }
             },
             child: Stack(
@@ -36,12 +130,12 @@ class HexBoard extends StatelessWidget {
                 CustomPaint(
                   size: Size(constraints.maxWidth, constraints.maxHeight),
                   painter: _HexBoardPainter(
-                    gameState: gameState,
+                    gameState: widget.gameState,
                     metrics: metrics,
                   ),
                 ),
                 // AI thinking overlay
-                if (gameState.aiThinking)
+                if (widget.gameState.aiThinking)
                   Positioned.fill(
                     child: Container(
                       color: Colors.black.withValues(alpha: 0.2),
@@ -79,7 +173,7 @@ class HexBoard extends StatelessWidget {
     double minDist = double.infinity;
     HexCoord? closest;
 
-    for (final coord in gameState.allCoords) {
+    for (final coord in widget.gameState.allCoords) {
       final center = metrics.axialToPixel(coord.q, coord.r);
       final dx = position.dx - center.dx;
       final dy = position.dy - center.dy;
