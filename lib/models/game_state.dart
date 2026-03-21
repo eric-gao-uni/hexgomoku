@@ -142,6 +142,9 @@ class GameState extends ChangeNotifier {
     // Center column (q=0): red pieces.
     // We want to center them around r=0.
     int startR = -(redCount - 1) ~/ 2;
+    if (n == 5) {
+      startR -= 1; // Shift red pieces up by one cell to align smoothly
+    }
     for (int i = 0; i < redCount; i++) {
         board[HexCoord(0, startR + i)] = PieceType.red;
     }
@@ -744,7 +747,6 @@ class GameState extends ChangeNotifier {
     
     int worstScoreForMe = baseScore; // Minimax: opponent minimizes my score
     
-    int evals = 0;
     for (final from in opPieces) {
       for (final to in _getValidTargetsForBoard(from, simBoard, opType)) {
         final b2 = Map<HexCoord, PieceType>.from(simBoard);
@@ -759,11 +761,7 @@ class GameState extends ChangeNotifier {
         if (scoreAfterOpOwn < worstScoreForMe) {
           worstScoreForMe = scoreAfterOpOwn;
         }
-
-        evals++;
-        if (evals > 20) break; // Aggressive hard limit
       }
-      if (evals > 20) break;
     }
     return worstScoreForMe;
   }

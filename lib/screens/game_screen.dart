@@ -43,8 +43,10 @@ class _GameScreenState extends State<GameScreen> {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted || !_gameState.isGameOver) return;
         Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => VictoryScreen(
+          PageRouteBuilder(
+            opaque: false,
+            barrierColor: Colors.black54,
+            pageBuilder: (_, __, ___) => VictoryScreen(
               winner: _gameState.winner!,
               moveCount: _gameState.moveCount,
               elapsedTime: Duration(
@@ -56,9 +58,8 @@ class _GameScreenState extends State<GameScreen> {
                 Navigator.of(context).pop();
                 _gameState.reset();
               },
-              onBackToHome: () {
+              onViewBoard: () {
                 Navigator.of(context).pop();
-                _gameState.reset();
               },
             ),
           ),

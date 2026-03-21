@@ -8,7 +8,7 @@ class VictoryScreen extends StatelessWidget {
   final Duration elapsedTime;
   final String? loseReason;
   final VoidCallback onNewGame;
-  final VoidCallback onBackToHome;
+  final VoidCallback onViewBoard;
 
   const VictoryScreen({
     super.key,
@@ -17,7 +17,7 @@ class VictoryScreen extends StatelessWidget {
     required this.elapsedTime,
     this.loseReason,
     required this.onNewGame,
-    required this.onBackToHome,
+    required this.onViewBoard,
   });
 
   @override
@@ -26,7 +26,7 @@ class VictoryScreen extends StatelessWidget {
     final seconds = (elapsedTime.inSeconds % 60).toString().padLeft(2, '0');
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: const Color(0xFF1A1A1A).withValues(alpha: 0.85),
       body: Stack(
         children: [
           // Background pattern
@@ -63,7 +63,7 @@ class VictoryScreen extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_back, color: Color(0xFF94A3B8)),
-                        onPressed: onBackToHome,
+                        onPressed: onViewBoard,
                       ),
                       Container(
                         height: 4,
@@ -216,7 +216,7 @@ class VictoryScreen extends StatelessWidget {
                           child: Transform(
                             transform: Matrix4.skewX(-0.15),
                             child: OutlinedButton(
-                              onPressed: onBackToHome,
+                              onPressed: onViewBoard,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFFCBD5E1),
                                 side: const BorderSide(color: Color(0x1AFFFFFF)),
@@ -227,9 +227,9 @@ class VictoryScreen extends StatelessWidget {
                                 child: const Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.home, size: 18),
+                                    Icon(Icons.visibility, size: 18),
                                     SizedBox(width: 8),
-                                    Text('Back to Home', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                                    Text('View Board', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                                   ],
                                 ),
                               ),
