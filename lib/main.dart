@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:upgrader/upgrader.dart';
 import 'screens/game_screen.dart';
 
 void main() {
@@ -38,7 +39,13 @@ class HexGomokuApp extends StatelessWidget {
           surface: Color(0xFF1A0D0D),
         ),
       ),
-      home: const GameScreen(),
+      home: UpgradeAlert(
+        upgrader: Upgrader(),
+        dialogStyle: UpgradeDialogStyle.cupertino,
+        showIgnore: false,
+        showLater: false,
+        child: const GameScreen(),
+      ),
     );
   }
 }
