@@ -53,7 +53,7 @@ class RulesDialog extends StatelessWidget {
                     'Align all 3 pieces of your color in a straight line to win.'),
                 const SizedBox(height: 12),
                 _rule('2', 'Turn',
-                    'Each turn: first move YOUR piece, then move a RED piece.'),
+                    'Each turn: move YOUR piece, then your OPPONENT moves a RED piece.'),
                 const SizedBox(height: 12),
                 _rule('3', 'Movement',
                     'Pieces can jump to any empty cell on the board.'),

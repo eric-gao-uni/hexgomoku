@@ -51,11 +51,16 @@ class GameState extends ChangeNotifier {
   /// Board: coord → piece type.
   Map<HexCoord, PieceType> board = {};
 
-  /// Current player.
+  /// Current player (who is acting right now).
   PlayerColor currentPlayer = PlayerColor.black;
 
   /// Turn phase.
   TurnPhase turnPhase = TurnPhase.moveOwn;
+
+  /// The player whose "turn" the red move phase belongs to.
+  /// In the new flow: A moves own → B moves red (for A's turn) → B moves own → A moves red (for B's turn).
+  /// This tracks whose pieces just moved in the moveOwn phase.
+  PlayerColor? _ownMovePlayer;
 
   /// Selected piece source coord.
   HexCoord? selectedPiece;
@@ -140,27 +145,21 @@ class GameState extends ChangeNotifier {
     int redCount = n - 1;
 
     // Center column (q=0): red pieces.
-    // We want to center them around r=0.
     int startR = -(redCount - 1) ~/ 2;
     if (n == 5) {
-      startR -= 1; // Shift red pieces up by one cell to align smoothly
+      startR -= 1;
     }
     for (int i = 0; i < redCount; i++) {
         board[HexCoord(0, startR + i)] = PieceType.red;
     }
 
     // Left column (q=-1): alternate W and B.
-    // We want to align its center with the red pieces.
     int leftStartR = -(n - 1) ~/ 2;
-    // Base color for left depends on whether we want W or B first. Let's use W first.
     for (int i = 0; i < n; i++) {
         board[HexCoord(-1, leftStartR + i)] = (i % 2 == 0) ? PieceType.white : PieceType.black;
     }
 
     // Right column (q=1): alternate B and W.
-    // For flat-top hexes, if q is +1, the y coordinate shifts down by 0.5 relative to q=0.
-    // To vertically align with q=0, starting r for q=1 should be slightly lower.
-    // We'll use startR - 1 as a base, or just match leftStartR - 1.
     int rightStartR = leftStartR - 1;
     for (int i = 0; i < n; i++) {
         board[HexCoord(1, rightStartR + i)] = (i % 2 == 0) ? PieceType.black : PieceType.white;
@@ -408,7 +407,6 @@ class GameState extends ChangeNotifier {
       board[to] = pieceType;
       _currentTurnMoves.add(_MoveRecord(from, to, pieceType));
       selectedPiece = null;
-      turnPhase = TurnPhase.moveRed;
 
       _checkWin(currentPlayer);
       if (isGameOver) {
@@ -420,9 +418,19 @@ class GameState extends ChangeNotifier {
         winner = currentPlayer.opponent;
         loseReason = 'No valid red move';
         _timer?.cancel();
+        notifyListeners();
+        return;
       }
 
+      // Switch to opponent for red move phase
+      _ownMovePlayer = currentPlayer;
+      currentPlayer = currentPlayer.opponent;
+      turnPhase = TurnPhase.moveRed;
+
       notifyListeners();
+
+      // If AI's turn to move red, trigger AI red move
+      _maybeDoAiRedMove();
     } else {
       // Red move - must not create islands
       final testBoard = Map<HexCoord, PieceType>.from(board);
@@ -440,9 +448,10 @@ class GameState extends ChangeNotifier {
       _currentTurnMoves.add(_MoveRecord(from, to, PieceType.red));
       selectedPiece = null;
 
+      // Red move done. Now current player (who just moved red) gets to move own piece.
       _commitTimeForCurrentPlayer();
       moveCount++;
-      currentPlayer = currentPlayer.opponent;
+      // currentPlayer stays the same — they now move their own piece
       turnPhase = TurnPhase.moveOwn;
       _currentTurnMoves.clear();
 
@@ -456,7 +465,7 @@ class GameState extends ChangeNotifier {
 
       notifyListeners();
 
-      // Trigger AI if it's AI's turn
+      // Trigger AI if it's AI's turn to move own piece
       _maybeDoAiMove();
     }
   }
@@ -505,6 +514,7 @@ class GameState extends ChangeNotifier {
   void _maybeDoAiMove() {
     if (settings.gameMode != GameMode.pvai) return;
     if (currentPlayer != PlayerColor.white) return;
+    if (turnPhase != TurnPhase.moveOwn) return;
     if (isGameOver) return;
 
     aiThinking = true;
@@ -519,33 +529,144 @@ class GameState extends ChangeNotifier {
     });
   }
 
+  /// AI moves red piece (when opponent just moved their own piece).
+  void _maybeDoAiRedMove() {
+    if (settings.gameMode != GameMode.pvai) return;
+    if (currentPlayer != PlayerColor.white) return;
+    if (turnPhase != TurnPhase.moveRed) return;
+    if (isGameOver) return;
+
+    aiThinking = true;
+    notifyListeners();
+
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (isGameOver) return;
+      _performAiRedMove();
+      aiThinking = false;
+      notifyListeners();
+    });
+  }
+
+  /// AI picks the best red move: block opponent lines, protect own mobility.
+  void _performAiRedMove() {
+    final redPieces = board.entries
+        .where((e) => e.value == PieceType.red && canMove(e.key))
+        .map((e) => e.key)
+        .toList();
+
+    if (redPieces.isEmpty) return;
+
+    final opType = _ownMovePlayer!.pieceType; // The player who just moved own piece
+    final myType = currentPlayer.pieceType; // AI = white
+
+    HexCoord? bestRedFrom;
+    HexCoord? bestRedTo;
+    int bestRedScore = -999999;
+
+    for (final rFrom in redPieces) {
+      final targets = getValidTargets(rFrom);
+      for (final rTo in targets) {
+        final simBoard = Map<HexCoord, PieceType>.from(board);
+        simBoard.remove(rFrom);
+        simBoard[rTo] = PieceType.red;
+
+        int score = 0;
+
+        // Block opponent lines
+        for (final dir in HexCoord.lineDirections) {
+          final (dq, dr) = dir;
+          final p1 = HexCoord(rTo.q - dq, rTo.r - dr);
+          final p2 = HexCoord(rTo.q + dq, rTo.r + dr);
+          if (simBoard[p1] == opType && simBoard[p2] == opType) {
+            score += 3000; // Block opponent line
+          }
+          // Don't block our own lines
+          if (simBoard[p1] == myType && simBoard[p2] == myType) {
+            score -= 2000;
+          }
+        }
+
+        // Protect own mobility: count how many of our pieces can still move
+        int myMobility = 0;
+        for (final entry in simBoard.entries) {
+          if (entry.value == myType && _canMoveOnBoard(entry.key, simBoard)) {
+            myMobility++;
+          }
+        }
+        score += myMobility * 500;
+
+        // Reduce opponent mobility
+        int opMobility = 0;
+        for (final entry in simBoard.entries) {
+          if (entry.value == opType && _canMoveOnBoard(entry.key, simBoard)) {
+            opMobility++;
+          }
+        }
+        score -= opMobility * 200;
+
+        if (score > bestRedScore) {
+          bestRedScore = score;
+          bestRedFrom = rFrom;
+          bestRedTo = rTo;
+        }
+      }
+    }
+
+    if (bestRedFrom == null) return;
+
+    // Execute red move via onCellTap to reuse validation logic
+    onCellTap(bestRedFrom);
+    onCellTap(bestRedTo!);
+  }
+
   void _performAiTurn() {
     if (settings.aiDifficulty == AiDifficulty.low) {
       _performGreedyAiTurn();
     } else {
-      _performAdvancedAiTurn(depth: settings.aiDifficulty == AiDifficulty.high ? 2 : 1);
+      _performAdvancedAiTurn(depth: settings.aiDifficulty == AiDifficulty.high ? 3 : 2);
     }
   }
 
   void _performGreedyAiTurn() {
+    // AI only moves own piece. Red move is handled by opponent in the new flow.
     final rng = math.Random();
+    final myType = currentPlayer.pieceType;
 
-    // Step 1: Move own piece
     final ownPieces = board.entries
-        .where((e) => e.value == currentPlayer.pieceType && canMove(e.key))
+        .where((e) => e.value == myType && canMove(e.key))
         .map((e) => e.key)
         .toList();
 
-    if (ownPieces.isEmpty) return;
+    if (ownPieces.isEmpty) {
+      winner = currentPlayer.opponent;
+      loseReason = 'All pieces blocked';
+      _timer?.cancel();
+      return;
+    }
 
     HexCoord? bestFrom;
     HexCoord? bestTo;
     int bestScore = -10000;
 
     for (final from in ownPieces) {
-      final targets = _getValidTargetsForBoard(from, board, currentPlayer.pieceType);
+      final targets = _getValidTargetsForBoard(from, board, myType);
       for (final to in targets) {
-        final score = _evaluateGreedyOwnMove(from, to);
+        final simBoard = Map<HexCoord, PieceType>.from(board);
+        simBoard.remove(from);
+        simBoard[to] = myType;
+
+        // Evaluate: assume opponent will use red move against us (worst case)
+        int score = _evaluateBoardState(simBoard, myType);
+
+        // Defensive: penalize moves that leave us vulnerable to being blocked
+        int myMobility = 0;
+        for (final entry in simBoard.entries) {
+          if (entry.value == myType && _canMoveOnBoard(entry.key, simBoard)) {
+            myMobility++;
+          }
+        }
+        score += myMobility * 300;
+
         if (score > bestScore) {
           bestScore = score;
           bestFrom = from;
@@ -556,197 +677,117 @@ class GameState extends ChangeNotifier {
 
     if (bestFrom == null || bestTo == null) {
       bestFrom = ownPieces[rng.nextInt(ownPieces.length)];
-      final targets = _getValidTargetsForBoard(bestFrom, board, currentPlayer.pieceType);
-      if (targets.isEmpty) return; // Should not happen if canMove is true
+      final targets = _getValidTargetsForBoard(bestFrom, board, myType);
+      if (targets.isEmpty) return;
       bestTo = targets[rng.nextInt(targets.length)];
     }
 
-    // Execute own move
-    final pieceType = board[bestFrom]!;
-    board.remove(bestFrom);
-    board[bestTo] = pieceType;
-    _currentTurnMoves.add(_MoveRecord(bestFrom, bestTo, pieceType));
-    turnPhase = TurnPhase.moveRed;
-
-    _checkWin(currentPlayer);
-    if (isGameOver) return;
-
-    // Step 2: Move red piece
-    final redPieces = board.entries
-        .where((e) => e.value == PieceType.red && canMove(e.key))
-        .map((e) => e.key)
-        .toList();
-
-    HexCoord? bestRedFrom;
-    HexCoord? bestRedTo;
-    int bestRedScore = -10000;
-
-    for (final from in redPieces) {
-      final targets = _getValidTargetsForBoard(from, board, PieceType.red);
-      for (final to in targets) {
-        final score = _evaluateGreedyRedMove(from, to);
-        if (score > bestRedScore) {
-          bestRedScore = score;
-          bestRedFrom = from;
-          bestRedTo = to;
-        }
-      }
-    }
-
-    if (bestRedFrom == null || bestRedTo == null) return;
-
-    board.remove(bestRedFrom);
-    board[bestRedTo] = PieceType.red;
-    _currentTurnMoves.add(_MoveRecord(bestRedFrom, bestRedTo, PieceType.red));
-
-    _commitTimeForCurrentPlayer();
-    moveCount++;
-    currentPlayer = currentPlayer.opponent;
-    turnPhase = TurnPhase.moveOwn;
-    _currentTurnMoves.clear();
-
-    if (!_hasMovablePiece(currentPlayer)) {
-      winner = currentPlayer.opponent;
-      loseReason = 'All pieces blocked';
-      _timer?.cancel();
-    }
-
-    _recenterBoard();
+    // Execute own move via onCellTap to trigger the new turn flow
+    onCellTap(bestFrom);
+    onCellTap(bestTo);
   }
 
   void _performAdvancedAiTurn({required int depth}) {
-    // Advanced AI evaluates the combination of (OwnMove, RedMove).
-    // If depth is 2, it assumes the opponent will make their best combination next turn.
+    // Advanced AI only moves own piece. Opponent controls red move afterward.
+    // Key insight: assume opponent will use red move in the worst way for us.
     final myType = currentPlayer.pieceType;
-    
+
     int bestScore = -999999;
     HexCoord? bestOwnFrom;
     HexCoord? bestOwnTo;
-    HexCoord? bestRedFrom;
-    HexCoord? bestRedTo;
 
     final ownPieces = board.entries.where((e) => e.value == myType && canMove(e.key)).map((e) => e.key).toList();
-    if (ownPieces.isEmpty) return;
+    if (ownPieces.isEmpty) {
+      winner = currentPlayer.opponent;
+      loseReason = 'All pieces blocked';
+      _timer?.cancel();
+      return;
+    }
 
-    // To prevent timeout, we use aggressive pruning and a fast heuristic.
-    // We collect all valid pairs of (OwnMove) resulting boards, 
-    // pick top 10 own moves, then find top red moves.
-    
-    // 1. Generate all OwnMoves
+    // Generate and score all own moves
     final ownMoves = <_ScoredAction>[];
     for (final from in ownPieces) {
       for (final to in _getValidTargetsForBoard(from, board, myType)) {
         final simBoard = Map<HexCoord, PieceType>.from(board);
         simBoard.remove(from);
         simBoard[to] = myType;
-        
-        // Fast static evaluation of just this own move
         final tempScore = _evaluateBoardState(simBoard, myType);
         ownMoves.add(_ScoredAction(from, to, tempScore));
       }
     }
-    
-    // Sort and keep top N to reduce branching
+
     ownMoves.sort((a, b) => b.score.compareTo(a.score));
-    final topOwnMoves = ownMoves.take(15).toList();
+    final topN = depth >= 3 ? 10 : 15;
+    final topOwnMoves = ownMoves.take(topN).toList();
 
     for (final ownMove in topOwnMoves) {
       final simBoardAfterOwn = Map<HexCoord, PieceType>.from(board);
       simBoardAfterOwn.remove(ownMove.from);
       simBoardAfterOwn[ownMove.to] = myType;
 
-      // Check win for own
+      // Immediate win? Take it.
       if (_hasWinner(simBoardAfterOwn, myType)) {
-         // Immediate win, take it
-         bestOwnFrom = ownMove.from; bestOwnTo = ownMove.to;
-         bestScore = 999999;
-         // Just find any valid red move
-         final redPieces = simBoardAfterOwn.entries.where((e) => e.value == PieceType.red && _canMoveOnBoard(e.key, simBoardAfterOwn)).map((e) => e.key).toList();
-         if (redPieces.isNotEmpty) {
-           final rFrom = redPieces.first;
-           final rTo = _getValidTargetsForBoard(rFrom, simBoardAfterOwn, PieceType.red).firstOrNull;
-           if (rTo != null) {
-             bestRedFrom = rFrom; bestRedTo = rTo;
-           }
-         }
-         break;
+        bestOwnFrom = ownMove.from;
+        bestOwnTo = ownMove.to;
+        bestScore = 999999;
+        break;
       }
 
-      final redPieces = simBoardAfterOwn.entries.where((e) => e.value == PieceType.red && _canMoveOnBoard(e.key, simBoardAfterOwn)).map((e) => e.key).toList();
-      
-      final redMoves = <_ScoredAction>[];
-      for (final rFrom in redPieces) {
-        for (final rTo in _getValidTargetsForBoard(rFrom, simBoardAfterOwn, PieceType.red)) {
-          final simBoardAfterRed = Map<HexCoord, PieceType>.from(simBoardAfterOwn);
-          simBoardAfterRed.remove(rFrom);
-          simBoardAfterRed[rTo] = PieceType.red;
-          
-          int finalScore = _evaluateBoardState(simBoardAfterRed, myType);
+      // Simulate opponent's worst-case red move against us
+      int worstCaseScore = ownMove.score;
+      final redPieces = simBoardAfterOwn.entries
+          .where((e) => e.value == PieceType.red && _canMoveOnBoard(e.key, simBoardAfterOwn))
+          .map((e) => e.key).toList();
 
-          if (depth > 1) {
-            // Opponent's turn simulation (very shallow to save time)
-            finalScore = _simulateOpponentTurn(simBoardAfterRed, myType, finalScore);
+      if (redPieces.isNotEmpty) {
+        worstCaseScore = 999999; // Will be minimized
+        for (final rFrom in redPieces) {
+          for (final rTo in _getValidTargetsForBoard(rFrom, simBoardAfterOwn, PieceType.red)) {
+            final simAfterRed = Map<HexCoord, PieceType>.from(simBoardAfterOwn);
+            simAfterRed.remove(rFrom);
+            simAfterRed[rTo] = PieceType.red;
+
+            int score = _evaluateBoardState(simAfterRed, myType);
+
+            if (depth > 1) {
+              score = _simulateOpponentTurn(simAfterRed, myType, score);
+            }
+
+            if (score < worstCaseScore) {
+              worstCaseScore = score;
+            }
           }
-
-          redMoves.add(_ScoredAction(rFrom, rTo, finalScore));
         }
       }
 
-      if (redMoves.isNotEmpty) {
-        // Sort to find best red move for this own move
-        redMoves.sort((a, b) => b.score.compareTo(a.score));
-        final bestRedMove = redMoves.first;
-        
-        if (bestRedMove.score > bestScore) {
-          bestScore = bestRedMove.score;
-          bestOwnFrom = ownMove.from;
-          bestOwnTo = ownMove.to;
-          bestRedFrom = bestRedMove.from;
-          bestRedTo = bestRedMove.to;
-        }
+      if (worstCaseScore > bestScore) {
+        bestScore = worstCaseScore;
+        bestOwnFrom = ownMove.from;
+        bestOwnTo = ownMove.to;
       }
     }
 
-    // Fallback if no moves evaluated properly
-    if (bestOwnFrom == null || bestRedFrom == null) {
+    if (bestOwnFrom == null) {
       _performGreedyAiTurn();
       return;
     }
 
-    // Execute the best combination
-    board.remove(bestOwnFrom!);
-    board[bestOwnTo!] = myType;
-    _currentTurnMoves.add(_MoveRecord(bestOwnFrom, bestOwnTo, myType));
-    turnPhase = TurnPhase.moveRed;
-    _checkWin(currentPlayer);
-    if (!isGameOver) {
-      board.remove(bestRedFrom!);
-      board[bestRedTo!] = PieceType.red;
-      _currentTurnMoves.add(_MoveRecord(bestRedFrom, bestRedTo, PieceType.red));
-    }
-
-    _commitTimeForCurrentPlayer();
-    moveCount++;
-    currentPlayer = currentPlayer.opponent;
-    turnPhase = TurnPhase.moveOwn;
-    _currentTurnMoves.clear();
-
-    if (!_hasMovablePiece(currentPlayer) && !isGameOver) {
-      winner = currentPlayer.opponent;
-      loseReason = 'All pieces blocked';
-      _timer?.cancel();
-    }
-
-    _recenterBoard();
+    // Execute own move via onCellTap to trigger the new turn flow
+    onCellTap(bestOwnFrom);
+    onCellTap(bestOwnTo!);
   }
 
   int _simulateOpponentTurn(Map<HexCoord, PieceType> simBoard, PieceType myType, int baseScore) {
-    // Find the opponent's best response and subtract it from our score.
+    // Simulate opponent's full turn: own move + best red move.
     final opType = myType == PieceType.black ? PieceType.white : PieceType.black;
     final opPieces = simBoard.entries.where((e) => e.value == opType && _canMoveOnBoard(e.key, simBoard)).map((e) => e.key).toList();
-    
-    int worstScoreForMe = baseScore; // Minimax: opponent minimizes my score
-    
+
+    if (opPieces.isEmpty) return baseScore + 5000; // Opponent stuck = good for us
+
+    int worstScoreForMe = baseScore;
+
+    // Evaluate opponent own moves, keep top 8 to limit branching
+    final opOwnMoves = <_ScoredAction>[];
     for (final from in opPieces) {
       for (final to in _getValidTargetsForBoard(from, simBoard, opType)) {
         final b2 = Map<HexCoord, PieceType>.from(simBoard);
@@ -754,13 +795,43 @@ class GameState extends ChangeNotifier {
         b2[to] = opType;
 
         if (_hasWinner(b2, opType)) {
-          return -999999; // Opponent can win immediately!
+          return -999999; // Opponent can win immediately
         }
 
-        final scoreAfterOpOwn = _evaluateBoardState(b2, myType);
-        if (scoreAfterOpOwn < worstScoreForMe) {
-          worstScoreForMe = scoreAfterOpOwn;
+        final s = _evaluateBoardState(b2, myType);
+        opOwnMoves.add(_ScoredAction(from, to, s));
+      }
+    }
+
+    // Opponent picks moves that minimize our score, so sort ascending
+    opOwnMoves.sort((a, b) => a.score.compareTo(b.score));
+    final topOpMoves = opOwnMoves.take(8).toList();
+
+    for (final opMove in topOpMoves) {
+      final boardAfterOpOwn = Map<HexCoord, PieceType>.from(simBoard);
+      boardAfterOpOwn.remove(opMove.from);
+      boardAfterOpOwn[opMove.to] = opType;
+
+      // Opponent also picks best red move (worst for us)
+      int bestOpRedScore = opMove.score; // Default if no red move
+      final redPieces = boardAfterOpOwn.entries
+          .where((e) => e.value == PieceType.red && _canMoveOnBoard(e.key, boardAfterOpOwn))
+          .map((e) => e.key).toList();
+
+      for (final rFrom in redPieces) {
+        for (final rTo in _getValidTargetsForBoard(rFrom, boardAfterOpOwn, PieceType.red)) {
+          final b3 = Map<HexCoord, PieceType>.from(boardAfterOpOwn);
+          b3.remove(rFrom);
+          b3[rTo] = PieceType.red;
+          final s = _evaluateBoardState(b3, myType);
+          if (s < bestOpRedScore) {
+            bestOpRedScore = s;
+          }
         }
+      }
+
+      if (bestOpRedScore < worstScoreForMe) {
+        worstScoreForMe = bestOpRedScore;
       }
     }
     return worstScoreForMe;
@@ -772,21 +843,51 @@ class GameState extends ChangeNotifier {
 
     final myPositions = testBoard.entries.where((e) => e.value == myType).map((e) => e.key).toList();
     final opPositions = testBoard.entries.where((e) => e.value == opType).map((e) => e.key).toList();
+    final redPositions = testBoard.entries.where((e) => e.value == PieceType.red).map((e) => e.key).toList();
 
+    // 1. Line formation scoring (most important)
     score += _evaluateLines(myPositions, testBoard, isMaximizing: true);
     score -= _evaluateLines(opPositions, testBoard, isMaximizing: false);
 
-    // Bonus for red pieces blocking opponent lines
-    final redPositions = testBoard.entries.where((e) => e.value == PieceType.red).map((e) => e.key).toList();
+    // 2. Red pieces blocking opponent lines
     for (final rPos in redPositions) {
       for (final dir in HexCoord.lineDirections) {
         final (dq, dr) = dir;
         final p1 = HexCoord(rPos.q - dq, rPos.r - dr);
         final p2 = HexCoord(rPos.q + dq, rPos.r + dr);
         if (testBoard[p1] == opType && testBoard[p2] == opType) {
-          score += 500; // Blocked a line!
+          score += 800; // Blocked opponent line
+        }
+        // Penalty if red blocks our own line
+        if (testBoard[p1] == myType && testBoard[p2] == myType) {
+          score -= 300;
         }
       }
+    }
+
+    // 3. Mobility: reward having more movable pieces than opponent
+    int myMobility = 0;
+    int opMobility = 0;
+    for (final pos in myPositions) {
+      if (_canMoveOnBoard(pos, testBoard)) myMobility++;
+    }
+    for (final pos in opPositions) {
+      if (_canMoveOnBoard(pos, testBoard)) opMobility++;
+    }
+    score += (myMobility - opMobility) * 150;
+
+    // 4. Penalize opponent being close to winning
+    // If opponent has n-1 in a line with open end, heavy penalty
+    // (already covered by _evaluateLines subtraction, but add extra urgency)
+
+    // 5. Centrality bonus: pieces closer to center have more tactical options
+    for (final pos in myPositions) {
+      final dist = (pos.q.abs() + pos.r.abs() + pos.s.abs()) ~/ 2;
+      score += math.max(0, (settings.boardRadius - dist) * 20);
+    }
+    for (final pos in opPositions) {
+      final dist = (pos.q.abs() + pos.r.abs() + pos.s.abs()) ~/ 2;
+      score -= math.max(0, (settings.boardRadius - dist) * 15);
     }
 
     return score;
@@ -890,21 +991,6 @@ class GameState extends ChangeNotifier {
     return false;
   }
 
-  // Legacy greedy evaluators for 'low' difficulty
-  int _evaluateGreedyOwnMove(HexCoord from, HexCoord to) {
-    final simBoard = Map<HexCoord, PieceType>.from(board);
-    simBoard.remove(from);
-    simBoard[to] = currentPlayer.pieceType;
-    return _evaluateBoardState(simBoard, currentPlayer.pieceType);
-  }
-
-  int _evaluateGreedyRedMove(HexCoord from, HexCoord to) {
-    final simBoard = Map<HexCoord, PieceType>.from(board);
-    simBoard.remove(from);
-    simBoard[to] = PieceType.red;
-    return _evaluateBoardState(simBoard, currentPlayer.pieceType);
-  }
-
   /// Check if a piece could exist at [coord] with sufficient liberties
   /// using the given board state.
   bool _canExistAt(HexCoord coord, Map<HexCoord, PieceType> testBoard) {
@@ -966,7 +1052,13 @@ class GameState extends ChangeNotifier {
       board[move.from] = move.pieceType;
     }
     _currentTurnMoves.clear();
+    // If we were in red phase (opponent was about to move red),
+    // revert to the own-move player's moveOwn phase.
+    if (turnPhase == TurnPhase.moveRed && _ownMovePlayer != null) {
+      currentPlayer = _ownMovePlayer!;
+    }
     turnPhase = TurnPhase.moveOwn;
+    _ownMovePlayer = null;
     selectedPiece = null;
     winner = null;
     loseReason = null;
@@ -982,6 +1074,7 @@ class GameState extends ChangeNotifier {
     _initBoard();
     currentPlayer = PlayerColor.black;
     turnPhase = TurnPhase.moveOwn;
+    _ownMovePlayer = null;
     selectedPiece = null;
     _currentTurnMoves.clear();
     moveCount = 0;
