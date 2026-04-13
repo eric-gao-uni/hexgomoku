@@ -52,7 +52,13 @@ git push origin master
    - 每条一行，用 `- ` 开头
    - 最后加一条 `- Bug fixes and stability improvements`
 4. 展示给用户确认
-5. 用户确认后 `echo "..." | pbcopy` 复制到剪贴板
+5. 用户确认后，将 What's New 文本写入临时文件再复制到剪贴板：
+   ```bash
+   cat <<'EOF' | pbcopy
+   （这里放生成的 What's New 文本，每行一条）
+   EOF
+   ```
+   注意：不要用 echo，避免 shell 转义问题。只复制 What's New 文本本身，不要包含其他内容。
 
 ## 步骤 6: 提交审查
 
